@@ -119,13 +119,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result = "📅 현재 스케줄\n\n"
 
         for date in sorted(data.keys()):
-            result += f"{date[:2]}/{date[2:]}\n"
-            result += "\n".join(
-                [f"• {name}" for name in data[date]]
+            names = " ".join(data[date])
+
+            result += (
+                f"{date[:2]}/{date[2:]} : "
+                f"{names}\n"
             )
-            result += "\n\n"
 
         await update.message.reply_text(result)
+
         return
 
     # /도움말
@@ -241,7 +243,6 @@ def main():
         )
     )
 
-    # 매일 오전 10시 알림
     app.job_queue.run_daily(
         daily_notification,
         time=time(
@@ -251,7 +252,6 @@ def main():
         )
     )
 
-    # 매일 00:01 이전 일정 삭제
     app.job_queue.run_daily(
         cleanup_old_schedules,
         time=time(
