@@ -11,14 +11,8 @@ from telegram.ext import (
     filters,
 )
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from pytz import timezone
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATA_FILE = "data.json"
-
-# 시청 홀덤 일정 그룹
-GROUP_ID = -5123266102
 
 
 def load_data():
@@ -38,44 +32,9 @@ def format_date(mmdd):
     return f"{mmdd[:2]}월 {mmdd[2:]}일"
 
 
-def remove_old_schedules():
-    today = datetime.now().strftime("%m%d")
-
-    data = load_data()
-
-    new_data = {}
-
-    for date, names in data.items():
-        if date >= today:
-            new_data[date] = names
-
-    save_data(new_data)
-
-    print("Old schedules removed")
-
-
-async def send_today_schedule(app):
-    today = datetime.now().strftime("%m%d")
-
-    data = load_data()
-
-    if today not in data:
-        return
-
-    names = "\n".join(
-        [f"• {name}" for name in data[today]]
-    )
-
-    await app.bot.send_message(
-        chat_id=GROUP_ID,
-        text=f"📢 금일 출근자 알림\n\n{names}"
-    )
-
-
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
-    # /id
     if text == "/id":
         await update.message.reply_text(
             f"채팅 ID: {update.effective_chat.id}\n"
@@ -84,12 +43,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # /테스트
-    if text == "/테스트":
-        await send_today_schedule(context.application)
-        return
-
-    # /오늘
     if text == "/오늘":
         today = datetime.now().strftime("%m%d")
 
@@ -110,7 +63,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # /스케줄
     if text == "/스케줄":
         data = load_data()
 
@@ -130,31 +82,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             result += "\n\n"
 
         await update.message.reply_text(result)
-
         return
 
-    # /도움말
     if text == "/도움말":
         await update.message.reply_text(
-            "사용 가능한 명령어\n\n"
             "/0610 성민 영재\n"
-            "→ 스케줄 등록 또는 수정\n\n"
+            "→ 등록 또는 수정\n\n"
             "/0610\n"
-            "→ 특정 날짜 조회\n\n"
+            "→ 날짜 조회\n\n"
             "/취소 0610\n"
-            "→ 스케줄 삭제\n\n"
+            "→ 삭제\n\n"
             "/오늘\n"
             "→ 오늘 출근자\n\n"
             "/스케줄\n"
             "→ 전체 스케줄\n\n"
-            "/테스트\n"
-            "→ 자동알림 테스트\n\n"
             "/id\n"
-            "→ 그룹 정보 확인"
+            "→ 그룹 정보"
         )
         return
 
-    # /취소 0610
     if text.startswith("/취소"):
         parts = text.split()
 
@@ -170,10 +116,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if date in data:
             del data[date]
+
             save_data(data)
 
             await update.message.reply_text(
-                f"✅ {format_date(date)} 스케줄 삭제 완료"
+                f"✅ {format_date(date)} 삭제 완료"
             )
         else:
             await update.message.reply_text(
@@ -182,7 +129,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
-    # /0610 조회
     match_lookup = re.match(r"^/(\d{4})$", text)
 
     if match_lookup:
@@ -206,7 +152,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
-    # /0610 성민 영재
     match_register = re.match(
         r"^/(\d{4})\s+(.+)$",
         text
@@ -217,7 +162,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         names = match_register.group(2).split()
 
-        # 중복 제거
         names = list(dict.fromkeys(names))
 
         data = load_data()
@@ -231,7 +175,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         await update.message.reply_text(
-            f"✅ {format_date(date)} 스케줄 등록 완료\n\n{people}"
+            f"✅ {format_date(date)} 등록 완료\n\n{people}"
         )
 
         return
@@ -246,30 +190,6 @@ def main():
             handle_message
         )
     )
-
-    scheduler = AsyncIOScheduler(
-        timezone=timezone("Asia/Seoul")
-    )
-
-    # 매일 오전 10시 출근 알림
-    scheduler.add_job(
-        lambda: app.create_task(
-            send_today_schedule(app)
-        ),
-        trigger="cron",
-        hour=10,
-        minute=0
-    )
-
-    # 매일 00:01 지난 일정 삭제
-    scheduler.add_job(
-        remove_old_schedules,
-        trigger="cron",
-        hour=0,
-        minute=1
-    )
-
-    scheduler.start()
 
     print("Bot Started")
 
