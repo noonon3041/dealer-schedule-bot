@@ -1,7 +1,8 @@
 import os
 import json
 import re
-from datetime import datetime
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
 
 from telegram import Update
 from telegram.ext import (
@@ -13,6 +14,9 @@ from telegram.ext import (
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATA_FILE = "data.json"
+
+# 시청 홀덤 일정 그룹
+GROUP_ID = -5123266102
 
 
 def load_data():
@@ -32,9 +36,42 @@ def format_date(mmdd):
     return f"{mmdd[:2]}월 {mmdd[2:]}일"
 
 
+async def daily_notification(context):
+    today = datetime.now().strftime("%m%d")
+
+    data = load_data()
+
+    if today not in data:
+        return
+
+    names = "\n".join(
+        [f"• {name}" for name in data[today]]
+    )
+
+    await context.bot.send_message(
+        chat_id=GROUP_ID,
+        text=f"📢 금일 출근자 알림\n\n{names}"
+    )
+
+
+async def cleanup_old_schedules(context):
+    today = datetime.now().strftime("%m%d")
+
+    data = load_data()
+
+    new_data = {}
+
+    for date, names in data.items():
+        if date >= today:
+            new_data[date] = names
+
+    save_data(new_data)
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
 
+    # /id
     if text == "/id":
         await update.message.reply_text(
             f"채팅 ID: {update.effective_chat.id}\n"
@@ -43,6 +80,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # /테스트
+    if text == "/테스트":
+        await daily_notification(context)
+        return
+
+    # /오늘
     if text == "/오늘":
         today = datetime.now().strftime("%m%d")
 
@@ -63,6 +106,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # /스케줄
     if text == "/스케줄":
         data = load_data()
 
@@ -84,8 +128,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(result)
         return
 
+    # /도움말
     if text == "/도움말":
         await update.message.reply_text(
+            "사용 가능한 명령어\n\n"
             "/0610 성민 영재\n"
             "→ 등록 또는 수정\n\n"
             "/0610\n"
@@ -96,11 +142,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "→ 오늘 출근자\n\n"
             "/스케줄\n"
             "→ 전체 스케줄\n\n"
+            "/테스트\n"
+            "→ 자동 알림 테스트\n\n"
             "/id\n"
             "→ 그룹 정보"
         )
         return
 
+    # /취소 0610
     if text.startswith("/취소"):
         parts = text.split()
 
@@ -116,7 +165,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if date in data:
             del data[date]
-
             save_data(data)
 
             await update.message.reply_text(
@@ -129,6 +177,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
+    # /0610 조회
     match_lookup = re.match(r"^/(\d{4})$", text)
 
     if match_lookup:
@@ -152,6 +201,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
+    # /0610 성민 영재 등록
     match_register = re.match(
         r"^/(\d{4})\s+(.+)$",
         text
@@ -188,6 +238,26 @@ def main():
         MessageHandler(
             filters.TEXT,
             handle_message
+        )
+    )
+
+    # 매일 오전 10시 알림
+    app.job_queue.run_daily(
+        daily_notification,
+        time=time(
+            hour=10,
+            minute=0,
+            tzinfo=ZoneInfo("Asia/Seoul")
+        )
+    )
+
+    # 매일 00:01 이전 일정 삭제
+    app.job_queue.run_daily(
+        cleanup_old_schedules,
+        time=time(
+            hour=0,
+            minute=1,
+            tzinfo=ZoneInfo("Asia/Seoul")
         )
     )
 
