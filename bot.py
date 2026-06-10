@@ -28,8 +28,21 @@ def save_data(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+def format_date(mmdd):
+    return f"{mmdd[:2]}월 {mmdd[2:]}일"
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+
+    # /id
+    if text == "/id":
+        await update.message.reply_text(
+            f"채팅 ID: {update.effective_chat.id}\n"
+            f"채팅 타입: {update.effective_chat.type}\n"
+            f"채팅명: {update.effective_chat.title}"
+        )
+        return
 
     # /오늘
     if text == "/오늘":
@@ -37,10 +50,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = load_data()
 
         if today not in data:
-            await update.message.reply_text("오늘 등록된 출근자가 없습니다.")
+            await update.message.reply_text(
+                "오늘 등록된 출근자가 없습니다."
+            )
             return
 
-        names = "\n".join([f"• {name}" for name in data[today]])
+        names = "\n".join(
+            [f"• {name}" for name in data[today]]
+        )
 
         await update.message.reply_text(
             f"📢 금일 출근자\n\n{names}"
@@ -52,14 +69,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = load_data()
 
         if not data:
-            await update.message.reply_text("등록된 스케줄이 없습니다.")
+            await update.message.reply_text(
+                "등록된 스케줄이 없습니다."
+            )
             return
 
         result = "📅 현재 스케줄\n\n"
 
         for date in sorted(data.keys()):
             result += f"{date[:2]}/{date[2:]}\n"
-            result += "\n".join([f"• {name}" for name in data[date]])
+            result += "\n".join(
+                [f"• {name}" for name in data[date]]
+            )
             result += "\n\n"
 
         await update.message.reply_text(result)
@@ -68,14 +89,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # /도움말
     if text == "/도움말":
         await update.message.reply_text(
-            "/0610 영재 성민\n"
-            "→ 스케줄 등록\n\n"
+            "사용 가능한 명령어\n\n"
+            "/0610 성민 영재\n"
+            "→ 스케줄 등록 또는 수정\n\n"
+            "/0610\n"
+            "→ 특정 날짜 조회\n\n"
             "/취소 0610\n"
             "→ 스케줄 삭제\n\n"
             "/오늘\n"
             "→ 오늘 출근자\n\n"
             "/스케줄\n"
-            "→ 전체 스케줄"
+            "→ 전체 스케줄\n\n"
+            "/id\n"
+            "→ 그룹 ID 확인"
         )
         return
 
@@ -98,7 +124,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_data(data)
 
             await update.message.reply_text(
-                f"✅ {date[:2]}월 {date[2:]}일 스케줄 삭제 완료"
+                f"✅ {format_date(date)} 스케줄 삭제 완료"
             )
         else:
             await update.message.reply_text(
@@ -107,12 +133,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
-    # /0610 영재 성민
-    match = re.match(r"^/(\d{4})\s+(.+)$", text)
+    # /0610 조회
+    match_lookup = re.match(r"^/(\d{4})$", text)
 
-    if match:
-        date = match.group(1)
-        names = match.group(2).split()
+    if match_lookup:
+        date = match_lookup.group(1)
+
+        data = load_data()
+
+        if date not in data:
+            await update.message.reply_text(
+                "등록된 스케줄이 없습니다."
+            )
+            return
+
+        names = "\n".join(
+            [f"• {name}" for name in data[date]]
+        )
+
+        await update.message.reply_text(
+            f"📅 {format_date(date)}\n\n{names}"
+        )
+        return
+
+    # /0610 성민 영재
+    match_register = re.match(
+        r"^/(\d{4})\s+(.+)$",
+        text
+    )
+
+    if match_register:
+        date = match_register.group(1)
+
+        names = match_register.group(2).split()
+
+        # 중복 제거
+        names = list(dict.fromkeys(names))
 
         data = load_data()
 
@@ -120,10 +176,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         save_data(data)
 
-        people = "\n".join([f"• {n}" for n in names])
+        people = "\n".join(
+            [f"• {name}" for name in names]
+        )
 
         await update.message.reply_text(
-            f"✅ {date[:2]}월 {date[2:]}일 스케줄 등록 완료\n\n{people}"
+            f"✅ {format_date(date)} 스케줄 등록 완료\n\n{people}"
         )
 
         return
@@ -133,11 +191,10 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
-    )
-
-    app.add_handler(
-        MessageHandler(filters.Regex(r"^/"), handle_message)
+        MessageHandler(
+            filters.TEXT,
+            handle_message
+        )
     )
 
     print("Bot Started")
