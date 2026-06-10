@@ -1,19 +1,149 @@
 import os
+import json
+import re
+from datetime import datetime
+
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import (
+    Application,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+DATA_FILE = "data.json"
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("홀덤 스케줄 봇이 정상 작동 중입니다.")
+
+def load_data():
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return {}
+
+
+def save_data(data):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+
+    # /오늘
+    if text == "/오늘":
+        today = datetime.now().strftime("%m%d")
+        data = load_data()
+
+        if today not in data:
+            await update.message.reply_text("오늘 등록된 출근자가 없습니다.")
+            return
+
+        names = "\n".join([f"• {name}" for name in data[today]])
+
+        await update.message.reply_text(
+            f"📢 금일 출근자\n\n{names}"
+        )
+        return
+
+    # /스케줄
+    if text == "/스케줄":
+        data = load_data()
+
+        if not data:
+            await update.message.reply_text("등록된 스케줄이 없습니다.")
+            return
+
+        result = "📅 현재 스케줄\n\n"
+
+        for date in sorted(data.keys()):
+            result += f"{date[:2]}/{date[2:]}\n"
+            result += "\n".join([f"• {name}" for name in data[date]])
+            result += "\n\n"
+
+        await update.message.reply_text(result)
+        return
+
+    # /도움말
+    if text == "/도움말":
+        await update.message.reply_text(
+            "/0610 영재 성민\n"
+            "→ 스케줄 등록\n\n"
+            "/취소 0610\n"
+            "→ 스케줄 삭제\n\n"
+            "/오늘\n"
+            "→ 오늘 출근자\n\n"
+            "/스케줄\n"
+            "→ 전체 스케줄"
+        )
+        return
+
+    # /취소 0610
+    if text.startswith("/취소"):
+        parts = text.split()
+
+        if len(parts) != 2:
+            await update.message.reply_text(
+                "사용법: /취소 0610"
+            )
+            return
+
+        date = parts[1]
+
+        data = load_data()
+
+        if date in data:
+            del data[date]
+            save_data(data)
+
+            await update.message.reply_text(
+                f"✅ {date[:2]}월 {date[2:]}일 스케줄 삭제 완료"
+            )
+        else:
+            await update.message.reply_text(
+                "등록된 스케줄이 없습니다."
+            )
+
+        return
+
+    # /0610 영재 성민
+    match = re.match(r"^/(\d{4})\s+(.+)$", text)
+
+    if match:
+        date = match.group(1)
+        names = match.group(2).split()
+
+        data = load_data()
+
+        data[date] = names
+
+        save_data(data)
+
+        people = "\n".join([f"• {n}" for n in names])
+
+        await update.message.reply_text(
+            f"✅ {date[:2]}월 {date[2:]}일 스케줄 등록 완료\n\n{people}"
+        )
+
+        return
+
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
+    )
+
+    app.add_handler(
+        MessageHandler(filters.Regex(r"^/"), handle_message)
+    )
 
     print("Bot Started")
+
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
